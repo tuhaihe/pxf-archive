@@ -1,6 +1,6 @@
 module pxf-cli
 
-go 1.21.3
+go 1.21
 
 require (
 	github.com/greenplum-db/gp-common-go-libs v1.0.16

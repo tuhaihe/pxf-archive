@@ -1,0 +1,39 @@
+# GitHub Actions configuration for dependency updates
+version: 2
+
+updates:
+  # Enable version updates for GitHub Actions
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "ci"
+      
+  # Enable version updates for Maven (automation tests)
+  - package-ecosystem: "maven"
+    directory: "/automation"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "deps"
+      
+  # Enable version updates for Gradle (server)  
+  - package-ecosystem: "gradle"
+    directory: "/server"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "deps"
+      
+  # Enable version updates for Go modules (CLI)
+  - package-ecosystem: "gomod"
+    directory: "/cli"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "deps"
