@@ -124,14 +124,6 @@ gppkg-rpm: rpm
 	find build/rpmbuild/RPMS -name pxf-cbdb$(GP_MAJOR_VERSION)-*.rpm -exec cp {} gppkg/ \;
 	source $(GPHOME)/greenplum_path.sh && gppkg --build gppkg
 
-gppkg-rpm: rpm
-	rm -rf gppkg
-	mkdir -p gppkg/deps
-	GP_MAJOR_VERSION=$$(cat $(SOURCE_EXTENSION_DIR)/build/metadata/gp_major_version)
-	cat package/gppkg_spec.yml.in | sed "s,#arch,`arch`," | sed "s,#os,$(TEST_OS)," | sed "s,#gppkgver,1.0," | sed "s,#gpver,1," > gppkg/gppkg_spec.yml
-	find build/rpmbuild/RPMS -name pxf-cbdb$(GP_MAJOR_VERSION)-*.rpm -exec cp {} gppkg/ \;
-	source $(GPHOME)/greenplum_path.sh && gppkg --build gppkg
-
 rpm:
 	make -C $(SOURCE_EXTENSION_DIR) stage
 	make -C cli/go/src/pxf-cli stage
