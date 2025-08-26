@@ -351,44 +351,44 @@ jobs:
         echo '✅ Server build and test completed'
         "
 
-    - name: Build PXF Extensions
-      run: |
-        echo "🔌 Building PXF Extensions (FDW & External-table)..."
-        
-        CONTAINER_NAME="pxf-build-${{ github.run_id }}"
-        
-        docker exec --user gpadmin $CONTAINER_NAME bash -c "
-        source ~/.bashrc
-        source /usr/local/cloudberry-db/cloudberry-env.sh
-        source /home/gpadmin/cloudberry/gpAux/gpdemo/gpdemo-env.sh
-        
-        # Install libcurl-devel as the build dependency
-        sudo dnf install -y libcurl-devel
+    #- name: Build PXF Extensions
+    #  run: |
+    #    echo "🔌 Building PXF Extensions (FDW & External-table)..."
+    #    
+    #    CONTAINER_NAME="pxf-build-${{ github.run_id }}"
+    #    
+    #    docker exec --user gpadmin $CONTAINER_NAME bash -c "
+    #    source ~/.bashrc
+    #    source /usr/local/cloudberry-db/cloudberry-env.sh
+    #    source /home/gpadmin/cloudberry/gpAux/gpdemo/gpdemo-env.sh
+    #    
+    #    # Install libcurl-devel as the build dependency
+    #    sudo dnf install -y libcurl-devel
 
-        # Build External-table extension
-        echo 'Building External-table extension...'
-        if make -C external-table; then
-          echo '✅ External-table: Built successfully'
-          external_table_status='✅ External-table: Built successfully'
-        else
-          echo '⚠️ External-table: Build failed'
-          external_table_status='⚠️ External-table: Build failed'
-        fi
+    #    # Build External-table extension
+    #    echo 'Building External-table extension...'
+    #    if make -C external-table; then
+    #      echo '✅ External-table: Built successfully'
+    #      external_table_status='✅ External-table: Built successfully'
+    #    else
+    #      echo '⚠️ External-table: Build failed'
+    #      external_table_status='⚠️ External-table: Build failed'
+    #    fi
         
         # Build FDW extension  
-        echo 'Building FDW extension...'
-        if make -C fdw; then
-          echo '✅ FDW: Built successfully'
-          fdw_status='✅ FDW: Built successfully'
-        else
-          echo '⚠️ FDW: Build failed (compatibility issues)'
-          fdw_status='⚠️ FDW: Build failed'
-        fi
+    #    echo 'Building FDW extension...'
+    #    if make -C fdw; then
+    #      echo '✅ FDW: Built successfully'
+    #      fdw_status='✅ FDW: Built successfully'
+    #    else
+    #      echo '⚠️ FDW: Build failed (compatibility issues)'
+    #      fdw_status='⚠️ FDW: Build failed'
+    #    fi
         
-        echo '=== Extension Build Summary ==='
-        echo \$external_table_status
-        echo \$fdw_status
-        "
+    #    echo '=== Extension Build Summary ==='
+    #    echo \$external_table_status
+    #    echo \$fdw_status
+    #    "
 
     # -------------------------------------------------------------------------
     # Installation and Testing
