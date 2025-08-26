@@ -34,6 +34,9 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 45
     
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    
     strategy:
       fail-fast: false
       matrix:
@@ -541,18 +544,20 @@ jobs:
     - name: Download build artifacts
       uses: actions/download-artifact@v4
       with:
-        name: pxf-apache-cloudberry-*-java11
+        name: pxf-apache-cloudberry-${{ needs.build-pxf.outputs.version }}-java11
         
     - name: Run basic smoke tests
       run: |
         echo "🧪 Running basic smoke tests..."
         
         # Verify artifacts exist
-        if [ -f build/*.tar.gz ]; then
+        if [ -f *.tar.gz ]; then
           echo "✅ Build artifacts found"
-          ls -la build/*.tar.gz
+          ls -la *.tar.gz
         else
           echo "❌ No build artifacts found"
+          echo "Current directory contents:"
+          ls -la
           exit 1
         fi
         
@@ -586,7 +591,7 @@ jobs:
     - name: Download PXF artifacts
       uses: actions/download-artifact@v4
       with:
-        name: pxf-apache-cloudberry-*-java11
+        name: pxf-apache-cloudberry-${{ needs.build-pxf.outputs.version }}-java11
     
     - name: Run integration tests
       run: |
@@ -634,7 +639,7 @@ jobs:
     - name: Download PXF artifacts
       uses: actions/download-artifact@v4
       with:
-        name: pxf-apache-cloudberry-*-java11
+        name: pxf-apache-cloudberry-${{ needs.build-pxf.outputs.version }}-java11
         
     - name: Free up disk space
       run: |
@@ -835,7 +840,7 @@ jobs:
     - name: Download PXF artifacts
       uses: actions/download-artifact@v4
       with:
-        name: pxf-apache-cloudberry-*-java11
+        name: pxf-apache-cloudberry-${{ needs.build-pxf.outputs.version }}-java11
         
     - name: Set up Apache Cloudberry for automation tests
       run: |
