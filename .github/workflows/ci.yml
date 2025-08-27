@@ -198,11 +198,11 @@ jobs:
     # -------------------------------------------------------------------------
     - name: Setup Apache Cloudberry environment
       run: |
-        echo "🎯 Setting up optimized Cloudberry environment..."
-        
+        echo "🎯 Setting up Apache Cloudberry environment..."
+
         CONTAINER_NAME="pxf-build-${{ github.run_id }}"
-        
-        # Use the optimized setup script
+
+        # Use the enhanced setup script that builds Cloudberry from source
         ./scripts/setup-cloudberry-env.sh "$CONTAINER_NAME"
 
     # -------------------------------------------------------------------------
