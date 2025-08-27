@@ -28,10 +28,6 @@ env:
   JAVA_VERSION: '11'
   GO_VERSION: '1.21'
   MAVEN_OPTS: '-Xmx2g -XX:+UseG1GC'
-  # Timeout settings
-  BUILD_TIMEOUT: 45
-  TEST_TIMEOUT: 30
-  INTEGRATION_TIMEOUT: 60
 
 jobs:
   # =============================================================================
@@ -40,7 +36,7 @@ jobs:
   build-pxf:
     name: Build PXF Components
     runs-on: ubuntu-22.04
-    timeout-minutes: ${{ fromJson(env.BUILD_TIMEOUT) }}
+    timeout-minutes: 45
     
     outputs:
       version: ${{ steps.version.outputs.version }}
@@ -440,7 +436,7 @@ jobs:
     name: Smoke Tests
     needs: build-pxf
     runs-on: ubuntu-22.04
-    timeout-minutes: ${{ fromJson(env.TEST_TIMEOUT) }}
+    timeout-minutes: 30
 
     steps:
     - name: Checkout source
@@ -526,7 +522,7 @@ jobs:
     name: Integration Tests
     needs: build-pxf
     runs-on: ubuntu-22.04
-    timeout-minutes: ${{ fromJson(env.INTEGRATION_TIMEOUT) }}
+    timeout-minutes: 60
     if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'run-integration-tests')
 
     strategy:
