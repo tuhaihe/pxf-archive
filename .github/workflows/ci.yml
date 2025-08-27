@@ -157,7 +157,7 @@ jobs:
         docker exec $CONTAINER_NAME sudo chown -R gpadmin:gpadmin /home/gpadmin/.gradle || true
         docker exec $CONTAINER_NAME sudo chown -R gpadmin:gpadmin /home/gpadmin/go || true
         
-        # Setup environment using script
+        # Setup environment using reliable echo method
         docker exec --user gpadmin $CONTAINER_NAME bash -c "
           # Find and set correct JAVA_HOME for Java 11
           for java_path in /usr/lib/jvm/java-11-openjdk /usr/lib/jvm/java-11-openjdk-amd64 /usr/java/jdk-11*; do
@@ -166,30 +166,31 @@ jobs:
               break
             fi
           done
-          
+
           # Verify Java installation
           if [ -z \"\$JAVA_HOME\" ] || [ ! -d \"\$JAVA_HOME\" ]; then
             echo \"❌ No valid Java 11 installation found\"
+            echo \"Available Java installations:\"
+            ls -la /usr/lib/jvm/ || true
             exit 1
           fi
-          
-          echo \"✅ Using Java at: \$JAVA_HOME\"
+
+          echo \"✅ Found Java 11 at: \$JAVA_HOME\"
+
+          # Java and PXF configuration
+          export PXF_HOME=/usr/local/pxf
+          export GPHOME=/usr/local/cloudberry-db
+          export PATH=\$GPHOME/bin:\$JAVA_HOME/bin:\$PATH
+
+          # Persist environment settings using echo
+          echo '# PXF Build Environment' >> ~/.bashrc
+          echo \"export JAVA_HOME=\$JAVA_HOME\" >> ~/.bashrc
+          echo 'export PXF_HOME=/usr/local/pxf' >> ~/.bashrc
+          echo 'export GPHOME=/usr/local/cloudberry-db' >> ~/.bashrc
+          echo 'export PATH=\$GPHOME/bin:\$JAVA_HOME/bin:\$PATH' >> ~/.bashrc
+
+          # Verify Java installation
           \$JAVA_HOME/bin/java -version
-          
-          # Setup environment variables
-          export PXF_HOME=/usr/local/pxf
-          export GPHOME=/usr/local/cloudberry-db
-          export PATH=\$GPHOME/bin:\$JAVA_HOME/bin:\$PATH
-          
-          # Persist environment settings
-          cat >> ~/.bashrc << 'EOF'
-          # PXF Build Environment
-          export JAVA_HOME=$JAVA_HOME
-          export PXF_HOME=/usr/local/pxf
-          export GPHOME=/usr/local/cloudberry-db
-          export PATH=\$GPHOME/bin:\$JAVA_HOME/bin:\$PATH
-          EOF
-          
           echo '✅ Environment setup completed'
         "
 
@@ -216,7 +217,7 @@ jobs:
         
         docker exec --user gpadmin $CONTAINER_NAME bash -c "
           source ~/.bashrc
-          
+
           # Build CLI component with error handling
           echo 'Building CLI component...'
           cd cli
@@ -271,13 +272,16 @@ jobs:
         
         docker exec --user gpadmin $CONTAINER_NAME bash -c "
           source ~/.bashrc
-          
+
           # Verify Java environment
           if [ -z \"\$JAVA_HOME\" ] || [ ! -d \"\$JAVA_HOME\" ]; then
             echo \"❌ JAVA_HOME not properly set\"
+            echo \"Current JAVA_HOME: \$JAVA_HOME\"
+            echo \"Available Java installations:\"
+            ls -la /usr/lib/jvm/ || true
             exit 1
           fi
-          
+
           echo \"✅ Using JAVA_HOME: \$JAVA_HOME\"
           \$JAVA_HOME/bin/java -version
           
