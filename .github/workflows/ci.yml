@@ -1279,14 +1279,14 @@ jobs:
               
               # Create test PXF server configuration for HDFS
               cat > /tmp/test-hdfs-site.xml << 'EOF'
-<?xml version="1.0"?>
-<configuration>
-  <property>
-    <name>fs.defaultFS</name>
-    <value>hdfs://localhost:9000</value>
-  </property>
-</configuration>
-EOF
+              <?xml version="1.0"?>
+              <configuration>
+                <property>
+                  <name>fs.defaultFS</name>
+                  <value>hdfs://localhost:9000</value>
+                </property>
+              </configuration>
+              EOF
               
               sudo cp /tmp/test-hdfs-site.xml /usr/local/pxf/conf/ 2>/dev/null || echo "Config copy failed (expected)"
               
