@@ -248,16 +248,20 @@ jobs:
           
           # Run CLI unit tests (skip end-to-end tests that require server)
           echo 'Running CLI unit tests...'
-          
-          # Install test dependencies
+
+          # Install matching version of ginkgo based on go.mod
           if [ ! -x bin/ginkgo ]; then
             mkdir -p bin
             export GOBIN=\$(pwd)/bin
-            go install github.com/onsi/ginkgo/v2/ginkgo@latest
+            # Use go run to ensure version compatibility
+            echo 'Installing compatible Ginkgo version...'
+            go mod download
+            go install github.com/onsi/ginkgo/v2/ginkgo
           fi
-          
-          # Run unit tests only
-          if ./bin/ginkgo --skip-package=end_to_end ./cmd/...; then
+
+          # Run unit tests only, using go run for version compatibility
+          echo 'Running CLI unit tests with compatible Ginkgo...'
+          if go run github.com/onsi/ginkgo/v2/ginkgo --skip-package=end_to_end ./cmd/...; then
             echo '✅ CLI unit tests passed'
           else
             echo '⚠️ Some CLI tests failed, but continuing...'
@@ -324,7 +328,23 @@ jobs:
         
         docker exec --user gpadmin $CONTAINER_NAME bash -c "
           source ~/.bashrc
-          
+
+          # Set up Cloudberry version variables for extensions
+          echo 'Setting up Cloudberry version variables...'
+          if command -v psql >/dev/null 2>&1; then
+            # Try to get version from running Cloudberry
+            GP_VERSION=\$(psql --version 2>/dev/null | grep -o '[0-9]\+\.[0-9]\+\.[0-9]\+' | head -1 || echo '7.0.0')
+          else
+            # Fallback to a reasonable default
+            GP_VERSION='7.0.0'
+          fi
+
+          GP_MAJORVERSION=\$(echo \$GP_VERSION | cut -d. -f1)
+          export GP_VERSION GP_MAJORVERSION
+
+          echo \"Using GP_VERSION: \$GP_VERSION\"
+          echo \"Using GP_MAJORVERSION: \$GP_MAJORVERSION\"
+
           # Build external-table extension
           echo 'Building external-table extension...'
           cd external-table
@@ -333,7 +353,7 @@ jobs:
           else
             echo '⚠️ External-table extension build failed, but continuing...'
           fi
-          
+
           # Build FDW extension
           echo 'Building FDW extension...'
           cd ../fdw
@@ -352,17 +372,30 @@ jobs:
         
         docker exec --user gpadmin $CONTAINER_NAME bash -c "
           source ~/.bashrc
-          
-          # Create distribution package
-          echo 'Creating PXF distribution...'
-          make dist
-          
+
+          # Create distribution package using the correct target
+          echo 'Creating PXF distribution package...'
+
+          # First install the components
+          echo 'Installing PXF components...'
+          make install
+
+          # Then create the tar package
+          echo 'Creating tar package...'
+          make tar
+
           # Verify package was created
-          if ls pxf-apache-cloudberry-*.tar.gz >/dev/null 2>&1; then
+          if ls build/dist/*.tar.gz >/dev/null 2>&1; then
             echo '✅ PXF distribution package created successfully'
-            ls -lh pxf-apache-cloudberry-*.tar.gz
+            ls -lh build/dist/*.tar.gz
+
+            # Copy to workspace root for artifact upload
+            cp build/dist/*.tar.gz ./
+            ls -lh *.tar.gz
           else
             echo '❌ Failed to create PXF distribution package'
+            echo 'Available files in build directory:'
+            find build -name '*.tar.gz' -o -name '*.rpm' -o -name '*.deb' 2>/dev/null || echo 'No packages found'
             exit 1
           fi
         "
