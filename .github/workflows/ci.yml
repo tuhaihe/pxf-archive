@@ -304,34 +304,52 @@ jobs:
           # Set Gradle options for better performance
           export GRADLE_OPTS=\"-Xmx2g -XX:+UseG1GC -Dorg.gradle.daemon=false\"
           
-          # Clean and build with stage (skip tests for faster build)
-          if ./gradlew clean build stage -x test --parallel --build-cache; then
-            echo '✅ Server build successful'
+          # Clean and build with proper JAR creation
+          if ./gradlew clean compileJava bootJar --parallel --build-cache; then
+            echo '✅ Server compile and JAR creation successful'
 
-            # Verify stage artifacts and JAR integrity
-            echo 'Server build artifacts:'
-            ls -la build/ || echo 'No build directory'
-            ls -la build/stage/ || echo 'No stage directory'
-
-            # Find and verify JAR files
-            echo 'Verifying JAR files:'
-            find build -name '*.jar' -type f | while read jar_file; do
-              echo \"Checking JAR: \$jar_file\"
-              file_size=\$(stat -c%s \"\$jar_file\" 2>/dev/null || echo 0)
-              if [ \"\$file_size\" -gt 1000 ]; then
-                echo \"  ✅ Size: \$file_size bytes\"
-                # Test JAR integrity
-                if jar tf \"\$jar_file\" >/dev/null 2>&1; then
-                  echo \"  ✅ JAR integrity: OK\"
-                else
-                  echo \"  ❌ JAR integrity: FAILED\"
-                  exit 1
+            # Verify JAR files were created properly
+            echo 'Verifying created JAR files:'
+            find . -name '*.jar' -type f | while read jar_file; do
+              echo "Checking JAR: \$jar_file"
+              file_size=\$(stat -c%s "\$jar_file" 2>/dev/null || echo 0)
+              
+              # Skip small JARs (likely plain JARs)
+              if [ "\$file_size" -lt 10000 ]; then
+                echo "  ⚠️ Skipping small/plain JAR: \$jar_file (size: \$file_size bytes)"
+                continue
+              fi
+              
+              echo "  📦 JAR size: \$file_size bytes"
+              
+              # Test JAR integrity with detailed error reporting
+              if jar tf "\$jar_file" >/dev/null 2>&1; then
+                echo "  ✅ JAR integrity: OK"
+                
+                # Check if it's a Spring Boot JAR (executable)
+                if jar tf "\$jar_file" | grep -q "BOOT-INF/"; then
+                  echo "  ✅ Spring Boot JAR detected"
+                elif jar tf "\$jar_file" | grep -q "org/greenplum/pxf"; then
+                  echo "  ✅ PXF JAR with classes detected"
                 fi
               else
-                echo \"  ❌ JAR too small: \$file_size bytes\"
+                echo "  ❌ JAR integrity check failed: \$jar_file"
+                # Additional debugging
+                echo "  🔍 File info: \$(file "\$jar_file" 2>/dev/null || echo 'file command failed')"
+                echo "  🔍 First few bytes: \$(xxd -l 32 "\$jar_file" 2>/dev/null || echo 'xxd failed')"
                 exit 1
               fi
             done
+            
+            # Now run the stage task to set up proper directory structure
+            echo 'Running stage task to set up directory structure...'
+            if ./gradlew stage -x test; then
+              echo '✅ Stage task completed successfully'
+            else
+              echo '❌ Stage task failed'
+              exit 1
+            fi
+            
           else
             echo '❌ Server build failed'
             exit 1
@@ -504,71 +522,102 @@ jobs:
             cp -r server/build/* \"\$PACKAGE_DIR/\" 2>/dev/null || echo 'No Server build artifacts found'
           fi
 
-          # Find and copy PXF JAR files with integrity verification
+          # Find and copy PXF JAR files with improved integrity verification
           echo 'Setting up JAR files for integration tests...'
           jar_found=false
 
-          # Function to verify and copy JAR file
+          # Function to verify and copy JAR file with enhanced checks
           copy_jar_with_verification() {
-            local src_jar=\"\$1\"
-            local dest_dir=\"\$2\"
-            local jar_name=\$(basename \"\$src_jar\")
+            local src_jar="$1"
+            local dest_dir="$2"
+            local jar_name=$(basename "$src_jar")
 
-            echo \"Copying JAR: \$src_jar -> \$dest_dir/\$jar_name\"
+            echo "Verifying and copying JAR: $src_jar -> $dest_dir/$jar_name"
 
-            # Verify source JAR integrity before copying
-            if ! jar tf \"\$src_jar\" >/dev/null 2>&1; then
-              echo \"❌ Source JAR is corrupted: \$src_jar\"
+            # Check file size first
+            local jar_size=$(stat -c%s "$src_jar" 2>/dev/null || echo 0)
+            if [ "$jar_size" -lt 10000 ]; then
+              echo "  ⚠️ Skipping small JAR (likely plain JAR): $src_jar (size: $jar_size bytes)"
               return 1
+            fi
+
+            # Verify source JAR integrity with detailed diagnostics
+            if ! jar tf "$src_jar" >/dev/null 2>&1; then
+              echo "  ❌ Source JAR is corrupted: $src_jar"
+              echo "  🔍 File type: $(file "$src_jar" 2>/dev/null || echo 'unknown')"
+              echo "  🔍 File size: $jar_size bytes"
+              echo "  🔍 First 32 bytes: $(xxd -l 32 "$src_jar" 2>/dev/null || echo 'xxd failed')"
+              return 1
+            fi
+
+            # Check if it's a proper executable JAR
+            local is_bootjar=false
+            if jar tf "$src_jar" | grep -q "BOOT-INF/" 2>/dev/null; then
+              is_bootjar=true
+              echo "  ✅ Spring Boot executable JAR detected"
+            elif jar tf "$src_jar" | grep -q "org/greenplum/pxf" 2>/dev/null; then
+              echo "  ✅ PXF classes JAR detected"
+            else
+              echo "  ⚠️ Unknown JAR type, checking contents..."
+              jar tf "$src_jar" | head -10
             fi
 
             # Copy the JAR file
-            cp \"\$src_jar\" \"\$dest_dir/\$jar_name\"
+            cp "$src_jar" "$dest_dir/$jar_name"
 
             # Verify copied JAR integrity
-            if ! jar tf \"\$dest_dir/\$jar_name\" >/dev/null 2>&1; then
-              echo \"❌ Copied JAR is corrupted: \$dest_dir/\$jar_name\"
-              rm -f \"\$dest_dir/\$jar_name\"
+            if ! jar tf "$dest_dir/$jar_name" >/dev/null 2>&1; then
+              echo "  ❌ Copied JAR is corrupted: $dest_dir/$jar_name"
+              rm -f "$dest_dir/$jar_name"
               return 1
             fi
 
-            echo \"✅ JAR copied and verified: \$dest_dir/\$jar_name\"
+            echo "  ✅ JAR copied and verified: $dest_dir/$jar_name (size: $jar_size bytes)"
             return 0
           }
 
-          # Look for JAR files in build locations
-          search_paths=('server/build/stage' 'server/build/libs' 'server/build')
+          # Look for JAR files in build locations with priority order
+          search_paths=('server/build/stage' 'server/pxf-service/build/libs' 'server/build/libs' 'server/build')
 
-          for search_path in \"\${search_paths[@]}\"; do
-            if [ -d \"\$search_path\" ]; then
-              echo \"Searching for JAR files in: \$search_path\"
+          for search_path in "${search_paths[@]}"; do
+            if [ -d "$search_path" ]; then
+              echo "Searching for JAR files in: $search_path"
 
-              # Find all JAR files in this path
-              while IFS= read -r -d '' jar_file; do
-                if [ -f \"\$jar_file\" ]; then
-                  jar_size=\$(stat -c%s \"\$jar_file\" 2>/dev/null || echo 0)
-
-                  if [ \"\$jar_size\" -gt 1000 ]; then
-                    echo \"Found JAR file: \$jar_file (size: \$jar_size bytes)\"
-
-                    # Copy to both locations for compatibility
-                    if copy_jar_with_verification \"\$jar_file\" \"\$PACKAGE_DIR/lib\" && \
-                       copy_jar_with_verification \"\$jar_file\" \"\$PACKAGE_DIR/application\"; then
-                      jar_found=true
-                    fi
-                  else
-                    echo \"⚠️ Skipping small JAR file: \$jar_file (size: \$jar_size bytes)\"
+              # Find all JAR files, prioritizing non-plain JARs
+              find "$search_path" -maxdepth 2 -name '*.jar' -type f ! -name '*-plain.jar' | while read jar_file; do
+                if [ -f "$jar_file" ]; then
+                  echo "Found JAR candidate: $jar_file"
+                  
+                  # Try to copy and verify this JAR
+                  if copy_jar_with_verification "$jar_file" "$PACKAGE_DIR/lib" && \
+                     copy_jar_with_verification "$jar_file" "$PACKAGE_DIR/application"; then
+                    jar_found=true
+                    break
                   fi
                 fi
-              done < <(find \"\$search_path\" -maxdepth 2 -name '*.jar' -type f -print0)
+              done
 
-              if [ \"\$jar_found\" = true ]; then
+              # If no executable JARs found, try plain JARs as fallback
+              if [ "$jar_found" = false ]; then
+                find "$search_path" -maxdepth 2 -name '*-plain.jar' -type f | while read jar_file; do
+                  if [ -f "$jar_file" ]; then
+                    echo "Trying plain JAR as fallback: $jar_file"
+                    if copy_jar_with_verification "$jar_file" "$PACKAGE_DIR/lib" && \
+                       copy_jar_with_verification "$jar_file" "$PACKAGE_DIR/application"; then
+                      jar_found=true
+                      break
+                    fi
+                  fi
+                done
+              fi
+
+              if [ "$jar_found" = true ]; then
                 break
               fi
             fi
           done
 
-          if [ \"\$jar_found\" = false ]; then
+          if [ "$jar_found" = false ]; then
             echo '❌ No valid JAR files found in server build artifacts'
             echo 'Available files in server/build:'
             find server/build -type f -name '*' | head -10 || echo 'No files found'
