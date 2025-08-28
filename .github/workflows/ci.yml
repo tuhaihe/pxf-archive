@@ -429,6 +429,31 @@ jobs:
             cp -r server/build/* \"\$PACKAGE_DIR/\" 2>/dev/null || echo 'No Server build artifacts found'
           fi
 
+          # Also check for JAR files in server directory and copy them to expected locations
+          echo 'Setting up JAR files for integration tests...'
+          mkdir -p \"\$PACKAGE_DIR/lib\" \"\$PACKAGE_DIR/application\"
+
+          # Find and copy PXF JAR files
+          if find server -name 'pxf-app-*.jar' -type f | head -1 | read jar_file; then
+            echo \"Found PXF app JAR: \$jar_file\"
+            cp \"\$jar_file\" \"\$PACKAGE_DIR/application/\"
+            cp \"\$jar_file\" \"\$PACKAGE_DIR/lib/\"
+          fi
+
+          if find server -name 'pxf-service-*.jar' -type f | head -1 | read jar_file; then
+            echo \"Found PXF service JAR: \$jar_file\"
+            cp \"\$jar_file\" \"\$PACKAGE_DIR/application/\"
+            cp \"\$jar_file\" \"\$PACKAGE_DIR/lib/\"
+          fi
+
+          # Find any JAR files in server/build and copy them
+          if find server/build -name '*.jar' -type f 2>/dev/null | head -5 | while read jar_file; do
+            echo \"Found JAR file: \$jar_file\"
+            cp \"\$jar_file\" \"\$PACKAGE_DIR/lib/\" 2>/dev/null || true
+          done; then
+            echo 'JAR files copied to lib directory'
+          fi
+
           # Copy any extension binaries that were built successfully
           if [ -d external-table/build ]; then
             echo 'Including external-table extension...'

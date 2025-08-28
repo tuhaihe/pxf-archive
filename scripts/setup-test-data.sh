@@ -255,8 +255,8 @@ function validate_test_data() {
         fi
     done
     
-    # Check file sizes are reasonable
-    local small_csv_size=$(stat -f%z "$TEST_DATA_DIR/small/employees.csv" 2>/dev/null || echo 0)
+    # Check file sizes are reasonable (use Linux-compatible stat command)
+    local small_csv_size=$(stat -c%s "$TEST_DATA_DIR/small/employees.csv" 2>/dev/null || echo 0)
     if [[ $small_csv_size -lt 100 ]]; then
         validation_errors+=("Small CSV file is too small: $small_csv_size bytes")
     fi
