@@ -143,6 +143,48 @@ main() {
     else
         echo "� Building Cloudberry from source..."
 
+        # Check if Java environment is already set up (for compatibility with ci-optimized.yml)
+        java_already_set=$(docker exec --user gpadmin "$container_name" bash -c "
+            source ~/.bashrc 2>/dev/null || true
+            if [ -n \"\$JAVA_HOME\" ] && [ -d \"\$JAVA_HOME\" ]; then
+                echo 'yes'
+            else
+                echo 'no'
+            fi
+        ")
+
+        if [ "$java_already_set" = "yes" ]; then
+            echo "✅ Java environment already configured, skipping Java setup"
+        else
+            echo "🔧 Setting up Java environment..."
+            # Set up Java environment (for compatibility with ci.yml)
+            docker exec --user gpadmin "$container_name" bash -c "
+                # Find and set correct JAVA_HOME for Java 11
+                for java_path in /usr/lib/jvm/java-11-openjdk /usr/lib/jvm/java-11-openjdk-amd64 /usr/java/jdk-11*; do
+                    if [ -d \"\$java_path\" ]; then
+                        export JAVA_HOME=\"\$java_path\"
+                        break
+                    fi
+                done
+
+                if [ -z \"\$JAVA_HOME\" ] || [ ! -d \"\$JAVA_HOME\" ]; then
+                    echo \"❌ No valid Java 11 installation found\"
+                    exit 1
+                fi
+
+                echo \"✅ Found Java 11 at: \$JAVA_HOME\"
+
+                # Persist environment settings using echo method
+                echo '# PXF Build Environment' >> ~/.bashrc
+                echo \"export JAVA_HOME=\$JAVA_HOME\" >> ~/.bashrc
+                echo 'export PXF_HOME=/usr/local/pxf' >> ~/.bashrc
+                echo 'export GPHOME=/usr/local/cloudberry-db' >> ~/.bashrc
+                echo 'export PATH=\$GPHOME/bin:\$JAVA_HOME/bin:\$PATH' >> ~/.bashrc
+
+                echo '✅ Java environment setup completed'
+            "
+        fi
+
         # Setup source, build, and initialize
         setup_cloudberry_source "$container_name"
         build_cloudberry "$container_name"

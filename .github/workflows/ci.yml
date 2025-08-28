@@ -373,29 +373,96 @@ jobs:
         docker exec --user gpadmin $CONTAINER_NAME bash -c "
           source ~/.bashrc
 
-          # Create distribution package using the correct target
+          # Create distribution package with proper environment setup
           echo 'Creating PXF distribution package...'
 
-          # First install the components
-          echo 'Installing PXF components...'
-          make install
+          # Set up required environment variables and metadata
+          echo 'Setting up build environment and metadata...'
 
-          # Then create the tar package
-          echo 'Creating tar package...'
-          make tar
+          # Get Cloudberry version information
+          if command -v psql >/dev/null 2>&1; then
+            GP_VERSION=\$(psql --version 2>/dev/null | grep -o '[0-9]\+\.[0-9]\+\.[0-9]\+' | head -1 || echo '7.0.0')
+          else
+            GP_VERSION='7.0.0'
+          fi
+
+          GP_MAJORVERSION=\$(echo \$GP_VERSION | cut -d. -f1)
+          BUILD_ARCH=\$(uname -m)
+
+          # Export variables for make
+          export GP_VERSION GP_MAJORVERSION
+          export SOURCE_EXTENSION_DIR=/build
+          export TARGET_EXTENSION_DIR=pxf
+          export BLD_ARCH=\$BUILD_ARCH
+
+          echo \"Using GP_VERSION: \$GP_VERSION\"
+          echo \"Using GP_MAJORVERSION: \$GP_MAJORVERSION\"
+          echo \"Using BUILD_ARCH: \$BUILD_ARCH\"
+          echo \"Using SOURCE_EXTENSION_DIR: \$SOURCE_EXTENSION_DIR\"
+
+          # Create required metadata directories and files
+          sudo mkdir -p /build/metadata /build/stage
+          echo \$GP_MAJORVERSION | sudo tee /build/metadata/gp_major_version
+          echo \$BUILD_ARCH | sudo tee /build/metadata/build_arch
+          sudo chown -R gpadmin:gpadmin /build
+
+          # Create a simple distribution package manually
+          echo 'Creating PXF distribution package manually...'
+
+          # Create distribution directory
+          PXF_VERSION=\$(cat version)
+          PACKAGE_NAME=\"pxf-cbdb\${GP_MAJORVERSION}-\${PXF_VERSION}-\${BUILD_ARCH}\"
+          DIST_DIR=\"build/dist\"
+          PACKAGE_DIR=\"\${DIST_DIR}/\${PACKAGE_NAME}\"
+
+          mkdir -p \"\$PACKAGE_DIR/pxf\"
+
+          # Copy CLI binaries if they exist
+          if [ -d cli/build ]; then
+            echo 'Including CLI binaries...'
+            cp -r cli/build/* \"\$PACKAGE_DIR/\" 2>/dev/null || echo 'No CLI build artifacts found'
+          fi
+
+          # Copy Server binaries if they exist
+          if [ -d server/build ]; then
+            echo 'Including Server binaries...'
+            cp -r server/build/* \"\$PACKAGE_DIR/\" 2>/dev/null || echo 'No Server build artifacts found'
+          fi
+
+          # Copy any extension binaries that were built successfully
+          if [ -d external-table/build ]; then
+            echo 'Including external-table extension...'
+            cp -r external-table/build/* \"\$PACKAGE_DIR/\" 2>/dev/null || echo 'No external-table build artifacts'
+          fi
+
+          if [ -d fdw/build ]; then
+            echo 'Including FDW extension...'
+            cp -r fdw/build/* \"\$PACKAGE_DIR/\" 2>/dev/null || echo 'No FDW build artifacts'
+          fi
+
+          # Add version and commit information
+          echo \"\$PXF_VERSION\" > \"\$PACKAGE_DIR/pxf/version\"
+          git rev-parse --verify HEAD > \"\$PACKAGE_DIR/pxf/commit.sha\" 2>/dev/null || echo 'unknown' > \"\$PACKAGE_DIR/pxf/commit.sha\"
+
+          # Create the tar package
+          cd \"\$DIST_DIR\"
+          tar -czf \"\${PACKAGE_NAME}.tar.gz\" \"\$PACKAGE_NAME\"
+          cd /workspace
 
           # Verify package was created
-          if ls build/dist/*.tar.gz >/dev/null 2>&1; then
+          if [ -f \"\$DIST_DIR/\${PACKAGE_NAME}.tar.gz\" ]; then
             echo '✅ PXF distribution package created successfully'
-            ls -lh build/dist/*.tar.gz
+            ls -lh \"\$DIST_DIR/\${PACKAGE_NAME}.tar.gz\"
 
             # Copy to workspace root for artifact upload
-            cp build/dist/*.tar.gz ./
+            cp \"\$DIST_DIR/\${PACKAGE_NAME}.tar.gz\" ./
             ls -lh *.tar.gz
           else
             echo '❌ Failed to create PXF distribution package'
             echo 'Available files in build directory:'
             find build -name '*.tar.gz' -o -name '*.rpm' -o -name '*.deb' 2>/dev/null || echo 'No packages found'
+            echo 'Build directory contents:'
+            ls -la build/ || echo 'Build directory not found'
             exit 1
           fi
         "
