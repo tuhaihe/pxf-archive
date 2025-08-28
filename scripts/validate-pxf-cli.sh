@@ -13,6 +13,11 @@ CLI_PATHS=(
     "pxf-extracted/bin/pxf"
     "pxf-extracted/pxf/bin/pxf"
     "pxf-extracted/cli/pxf"
+    "pxf-extracted/pxf-cli"
+    "pxf-extracted/build/pxf-cli"
+    "pxf-extracted/cli/build/pxf-cli"
+    "pxf-extracted/stage/bin/pxf"
+    "pxf-extracted/stage/pxf/bin/pxf"
 )
 
 CLI_COMMANDS=(
@@ -52,12 +57,17 @@ function validate_cli_binary() {
 
 function validate_cli_permissions() {
     log_info "🔐 Validating CLI permissions..."
-    
+
+    if [[ -z "${PXF_CLI_PATH:-}" ]]; then
+        log_error "PXF CLI path not set"
+        return 1
+    fi
+
     if [[ ! -x "$PXF_CLI_PATH" ]]; then
         log_error "PXF CLI is not executable"
         return 1
     fi
-    
+
     log_success "CLI permissions validated"
     return 0
 }

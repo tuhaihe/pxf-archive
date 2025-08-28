@@ -418,40 +418,86 @@ jobs:
           mkdir -p \"\$PACKAGE_DIR/pxf\"
 
           # Copy CLI binaries if they exist
-          if [ -d cli/build ]; then
-            echo 'Including CLI binaries...'
-            cp -r cli/build/* \"\$PACKAGE_DIR/\" 2>/dev/null || echo 'No CLI build artifacts found'
+          echo 'Setting up CLI binaries...'
+          mkdir -p \"\$PACKAGE_DIR/bin\"
+
+          # Look for CLI binary in various locations
+          cli_found=false
+          for cli_path in 'cli/build/pxf-cli' 'cli/build/stage/bin/pxf-cli' 'cli/pxf-cli'; do
+            if [ -f \"\$cli_path\" ]; then
+              echo \"Found CLI binary at: \$cli_path\"
+              cp \"\$cli_path\" \"\$PACKAGE_DIR/bin/pxf\"
+              chmod +x \"\$PACKAGE_DIR/bin/pxf\"
+              cli_found=true
+              break
+            fi
+          done
+
+          if [ \"\$cli_found\" = false ]; then
+            echo '⚠️ CLI binary not found, checking build directory...'
+            find cli -name 'pxf-cli' -type f 2>/dev/null | head -1 | while read cli_file; do
+              echo \"Found CLI binary at: \$cli_file\"
+              cp \"\$cli_file\" \"\$PACKAGE_DIR/bin/pxf\"
+              chmod +x \"\$PACKAGE_DIR/bin/pxf\"
+            done
           fi
 
-          # Copy Server binaries if they exist
-          if [ -d server/build ]; then
-            echo 'Including Server binaries...'
+          # Also copy any other CLI build artifacts
+          if [ -d cli/build ]; then
+            cp -r cli/build/* \"\$PACKAGE_DIR/\" 2>/dev/null || echo 'No additional CLI artifacts'
+          fi
+
+          # Copy Server binaries and set up proper structure
+          echo 'Setting up Server binaries and JAR files...'
+          mkdir -p \"\$PACKAGE_DIR/lib\" \"\$PACKAGE_DIR/application\" \"\$PACKAGE_DIR/servers\"
+
+          # Copy server build artifacts if they exist
+          if [ -d server/build/stage ]; then
+            echo 'Including Server stage artifacts...'
+            cp -r server/build/stage/* \"\$PACKAGE_DIR/\" 2>/dev/null || echo 'No Server stage artifacts found'
+          elif [ -d server/build ]; then
+            echo 'Including Server build artifacts...'
             cp -r server/build/* \"\$PACKAGE_DIR/\" 2>/dev/null || echo 'No Server build artifacts found'
           fi
 
-          # Also check for JAR files in server directory and copy them to expected locations
+          # Find and copy PXF JAR files to expected locations for integration tests
           echo 'Setting up JAR files for integration tests...'
-          mkdir -p \"\$PACKAGE_DIR/lib\" \"\$PACKAGE_DIR/application\"
+          jar_found=false
 
-          # Find and copy PXF JAR files
-          if find server -name 'pxf-app-*.jar' -type f | head -1 | read jar_file; then
-            echo \"Found PXF app JAR: \$jar_file\"
-            cp \"\$jar_file\" \"\$PACKAGE_DIR/application/\"
-            cp \"\$jar_file\" \"\$PACKAGE_DIR/lib/\"
-          fi
+          # Look for JAR files in various locations
+          for search_path in 'server/build/stage' 'server/build' 'server'; do
+            if [ -d \"\$search_path\" ]; then
+              # Find PXF service JAR
+              if find \"\$search_path\" -name 'pxf-service-*.jar' -type f | head -1 | read jar_file; then
+                echo \"Found PXF service JAR: \$jar_file\"
+                cp \"\$jar_file\" \"\$PACKAGE_DIR/application/\"
+                cp \"\$jar_file\" \"\$PACKAGE_DIR/lib/\"
+                jar_found=true
+              fi
 
-          if find server -name 'pxf-service-*.jar' -type f | head -1 | read jar_file; then
-            echo \"Found PXF service JAR: \$jar_file\"
-            cp \"\$jar_file\" \"\$PACKAGE_DIR/application/\"
-            cp \"\$jar_file\" \"\$PACKAGE_DIR/lib/\"
-          fi
+              # Find PXF app JAR
+              if find \"\$search_path\" -name 'pxf-app-*.jar' -type f | head -1 | read jar_file; then
+                echo \"Found PXF app JAR: \$jar_file\"
+                cp \"\$jar_file\" \"\$PACKAGE_DIR/application/\"
+                cp \"\$jar_file\" \"\$PACKAGE_DIR/lib/\"
+                jar_found=true
+              fi
 
-          # Find any JAR files in server/build and copy them
-          if find server/build -name '*.jar' -type f 2>/dev/null | head -5 | while read jar_file; do
-            echo \"Found JAR file: \$jar_file\"
-            cp \"\$jar_file\" \"\$PACKAGE_DIR/lib/\" 2>/dev/null || true
-          done; then
-            echo 'JAR files copied to lib directory'
+              # Copy all JAR files to lib directory
+              find \"\$search_path\" -name '*.jar' -type f | while read jar_file; do
+                echo \"Found JAR file: \$jar_file\"
+                cp \"\$jar_file\" \"\$PACKAGE_DIR/lib/\" 2>/dev/null || true
+                jar_found=true
+              done
+
+              if [ \"\$jar_found\" = true ]; then
+                break
+              fi
+            fi
+          done
+
+          if [ \"\$jar_found\" = false ]; then
+            echo '⚠️ No JAR files found in server build artifacts'
           fi
 
           # Copy any extension binaries that were built successfully

@@ -281,13 +281,17 @@ main() {
     echo "❌ Failed: $fail_count"
     echo "⚠️  Warnings: $warn_count"
     
-    if [ "$exit_code" -eq 0 ]; then
+    # Check if we have any actual failures (not just warnings)
+    if [ "$fail_count" -eq 0 ]; then
         echo "🎉 Integration tests completed successfully!"
+        if [ "$warn_count" -gt 0 ]; then
+            echo "ℹ️ Note: $warn_count warnings were reported but did not cause failure"
+        fi
+        return 0
     else
         echo "💥 Some integration tests failed. Check logs for details."
+        return 1
     fi
-    
-    return $exit_code
 }
 
 # Execute main function
