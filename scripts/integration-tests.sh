@@ -273,10 +273,21 @@ main() {
     echo "📊 Integration Test Summary ($TEST_SUITE):"
     echo "=========================================="
     
-    local pass_count=$(grep -c "\[PASS\]" "$TEST_RESULTS_DIR/integration-test.log" || echo "0")
-    local fail_count=$(grep -c "\[FAIL\]" "$TEST_RESULTS_DIR/integration-test.log" || echo "0")
-    local warn_count=$(grep -c "\[WARN\]" "$TEST_RESULTS_DIR/integration-test.log" || echo "0")
-    
+    # Fix potential newline issues in count variables
+    local pass_count=$(grep -c "\[PASS\]" "$TEST_RESULTS_DIR/integration-test.log" 2>/dev/null || echo "0")
+    local fail_count=$(grep -c "\[FAIL\]" "$TEST_RESULTS_DIR/integration-test.log" 2>/dev/null || echo "0")
+    local warn_count=$(grep -c "\[WARN\]" "$TEST_RESULTS_DIR/integration-test.log" 2>/dev/null || echo "0")
+
+    # Ensure counts are clean integers
+    pass_count=$(echo "$pass_count" | tr -d '\n\r' | grep -o '[0-9]*' | head -1)
+    fail_count=$(echo "$fail_count" | tr -d '\n\r' | grep -o '[0-9]*' | head -1)
+    warn_count=$(echo "$warn_count" | tr -d '\n\r' | grep -o '[0-9]*' | head -1)
+
+    # Set defaults if empty
+    pass_count=${pass_count:-0}
+    fail_count=${fail_count:-0}
+    warn_count=${warn_count:-0}
+
     echo "✅ Passed: $pass_count"
     echo "❌ Failed: $fail_count"
     echo "⚠️  Warnings: $warn_count"

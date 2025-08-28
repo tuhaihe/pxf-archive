@@ -237,10 +237,18 @@ jobs:
           
           # Build CLI
           MODULE_NAME=\$(go list -m)
-          mkdir -p build
-          
+          mkdir -p build build/stage/bin
+
           if go build -v -ldflags \"-X \$MODULE_NAME/cmd.version=\$(cat ../version)\" -o build/pxf-cli \$MODULE_NAME; then
             echo '✅ CLI build successful'
+
+            # Create stage version for packaging
+            cp build/pxf-cli build/stage/bin/pxf-cli
+            chmod +x build/pxf-cli build/stage/bin/pxf-cli
+
+            echo 'CLI build artifacts:'
+            ls -la build/
+            ls -la build/stage/bin/
           else
             echo '❌ CLI build failed'
             exit 1
@@ -296,9 +304,15 @@ jobs:
           # Set Gradle options for better performance
           export GRADLE_OPTS=\"-Xmx2g -XX:+UseG1GC -Dorg.gradle.daemon=false\"
           
-          # Clean and build (skip tests for faster build)
-          if ./gradlew clean build -x test --parallel --build-cache; then
+          # Clean and build with stage (skip tests for faster build)
+          if ./gradlew clean build stage -x test --parallel --build-cache; then
             echo '✅ Server build successful'
+
+            # Verify stage artifacts
+            echo 'Server build artifacts:'
+            ls -la build/ || echo 'No build directory'
+            ls -la build/stage/ || echo 'No stage directory'
+            find build -name '*.jar' | head -5 || echo 'No JAR files found'
           else
             echo '❌ Server build failed'
             exit 1
@@ -417,35 +431,46 @@ jobs:
 
           mkdir -p \"\$PACKAGE_DIR/pxf\"
 
-          # Copy CLI binaries if they exist
+          # Copy CLI binaries - ensure proper structure
           echo 'Setting up CLI binaries...'
-          mkdir -p \"\$PACKAGE_DIR/bin\"
+          mkdir -p \"\$PACKAGE_DIR/bin\" \"\$PACKAGE_DIR/pxf/bin\"
 
-          # Look for CLI binary in various locations
+          # Look for CLI binary in build locations
           cli_found=false
-          for cli_path in 'cli/build/pxf-cli' 'cli/build/stage/bin/pxf-cli' 'cli/pxf-cli'; do
+
+          # Primary locations to check
+          cli_locations=(
+            'cli/build/pxf-cli'
+            'cli/build/stage/bin/pxf-cli'
+          )
+
+          for cli_path in \"\${cli_locations[@]}\"; do
             if [ -f \"\$cli_path\" ]; then
-              echo \"Found CLI binary at: \$cli_path\"
+              echo \"✅ Found CLI binary at: \$cli_path\"
+
+              # Copy to both standard locations for compatibility
               cp \"\$cli_path\" \"\$PACKAGE_DIR/bin/pxf\"
+              cp \"\$cli_path\" \"\$PACKAGE_DIR/pxf/bin/pxf\"
+
+              # Ensure executable permissions
               chmod +x \"\$PACKAGE_DIR/bin/pxf\"
+              chmod +x \"\$PACKAGE_DIR/pxf/bin/pxf\"
+
               cli_found=true
               break
             fi
           done
 
           if [ \"\$cli_found\" = false ]; then
-            echo '⚠️ CLI binary not found, checking build directory...'
-            find cli -name 'pxf-cli' -type f 2>/dev/null | head -1 | while read cli_file; do
-              echo \"Found CLI binary at: \$cli_file\"
-              cp \"\$cli_file\" \"\$PACKAGE_DIR/bin/pxf\"
-              chmod +x \"\$PACKAGE_DIR/bin/pxf\"
-            done
+            echo '❌ CLI binary not found in expected locations'
+            echo 'Searching for any pxf-cli files...'
+            find cli -name 'pxf-cli' -type f 2>/dev/null || echo 'No pxf-cli files found'
+            echo 'CLI directory contents:'
+            find cli -type f -name '*' | head -10
+            exit 1
           fi
 
-          # Also copy any other CLI build artifacts
-          if [ -d cli/build ]; then
-            cp -r cli/build/* \"\$PACKAGE_DIR/\" 2>/dev/null || echo 'No additional CLI artifacts'
-          fi
+          echo '✅ CLI binary successfully included in package'
 
           # Copy Server binaries and set up proper structure
           echo 'Setting up Server binaries and JAR files...'

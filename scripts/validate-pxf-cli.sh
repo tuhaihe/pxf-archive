@@ -29,9 +29,9 @@ CLI_COMMANDS=(
 
 function validate_cli_binary() {
     local cli_path=""
-    
+
     log_info "🔍 Searching for PXF CLI binary..."
-    
+
     for path in "${CLI_PATHS[@]}"; do
         if [[ -f "$path" ]]; then
             cli_path="$path"
@@ -39,17 +39,20 @@ function validate_cli_binary() {
             break
         fi
     done
-    
+
     if [[ -z "$cli_path" ]]; then
         log_error "PXF CLI binary not found in expected locations"
         log_info "Searched paths:"
         printf '  - %s\n' "${CLI_PATHS[@]}"
+
+        # Set empty path to prevent unbound variable errors
+        export PXF_CLI_PATH=""
         return 1
     fi
-    
+
     # Make CLI executable
     chmod +x "$cli_path"
-    
+
     # Export for use in other functions
     export PXF_CLI_PATH="$cli_path"
     return 0
@@ -74,12 +77,17 @@ function validate_cli_permissions() {
 
 function validate_cli_commands() {
     log_info "⚙️ Validating CLI commands..."
-    
+
+    if [[ -z "${PXF_CLI_PATH:-}" ]]; then
+        log_warning "Cannot validate CLI commands - CLI path not set"
+        return 0
+    fi
+
     local failed_commands=()
-    
+
     for cmd in "${CLI_COMMANDS[@]}"; do
         log_info "Testing command: pxf $cmd"
-        
+
         if timeout 10s "$PXF_CLI_PATH" $cmd >/dev/null 2>&1; then
             log_success "✅ Command 'pxf $cmd' works"
         else
@@ -108,11 +116,16 @@ function validate_cli_commands() {
 
 function validate_cli_version() {
     log_info "🏷️ Validating CLI version..."
-    
+
+    if [[ -z "${PXF_CLI_PATH:-}" ]]; then
+        log_warning "Could not retrieve CLI version - CLI path not set"
+        return 0
+    fi
+
     local version_output
     if version_output=$("$PXF_CLI_PATH" version 2>/dev/null); then
         log_info "CLI version output: $version_output"
-        
+
         # Check if version contains expected pattern
         if echo "$version_output" | grep -q "PXF version"; then
             log_success "CLI version format is correct"
@@ -122,13 +135,18 @@ function validate_cli_version() {
     else
         log_warning "Could not retrieve CLI version"
     fi
-    
+
     return 0
 }
 
 function validate_cli_help() {
     log_info "📖 Validating CLI help functionality..."
-    
+
+    if [[ -z "${PXF_CLI_PATH:-}" ]]; then
+        log_warning "Could not retrieve CLI help - CLI path not set"
+        return 0
+    fi
+
     local help_output
     if help_output=$("$PXF_CLI_PATH" --help 2>/dev/null); then
         # Check for expected help content
@@ -191,7 +209,7 @@ CLI Path: ${PXF_CLI_PATH:-"Not found"}
 Binary Validation:
 - Location: ${PXF_CLI_PATH:-"Not found"}
 - Executable: $(test -x "${PXF_CLI_PATH:-}" && echo "Yes" || echo "No")
-- Size: $(test -f "${PXF_CLI_PATH:-}" && stat -f%z "${PXF_CLI_PATH}" 2>/dev/null || echo "Unknown") bytes
+- Size: $(test -f "${PXF_CLI_PATH:-}" && stat -c%s "${PXF_CLI_PATH}" 2>/dev/null || echo "Unknown") bytes
 
 Command Validation:
 EOF
