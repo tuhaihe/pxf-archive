@@ -35,14 +35,23 @@ function validate_server_jar() {
     
     for jar_path in "${SERVER_JAR_PATHS[@]}"; do
         if [[ -d "$jar_path" ]]; then
-            # Look for main application JAR
-            if ls "$jar_path"/pxf-app-*.jar >/dev/null 2>&1; then
-                server_jar=$(ls "$jar_path"/pxf-app-*.jar | head -1)
-                break
-            elif ls "$jar_path"/pxf-service-*.jar >/dev/null 2>&1; then
-                server_jar=$(ls "$jar_path"/pxf-service-*.jar | head -1)
-                break
-            fi
+            # Look for main application JAR with various naming patterns
+            for jar_pattern in "pxf-app-*.jar" "pxf-service-*.jar" "pxf-*.jar" "*pxf*.jar"; do
+                if ls "$jar_path"/$jar_pattern >/dev/null 2>&1; then
+                    server_jar=$(ls "$jar_path"/$jar_pattern | head -1)
+
+                    # Verify the JAR file is not empty and has reasonable size
+                    if [[ -f "$server_jar" ]]; then
+                        local jar_size=$(stat -c%s "$server_jar" 2>/dev/null || echo 0)
+                        if [[ $jar_size -gt 1000 ]]; then
+                            break 2
+                        else
+                            log_warning "Found JAR but it's too small: $server_jar ($jar_size bytes)"
+                            server_jar=""
+                        fi
+                    fi
+                fi
+            done
         fi
     done
     
@@ -50,9 +59,12 @@ function validate_server_jar() {
         log_error "PXF Server JAR not found in expected locations"
         log_info "Searched paths:"
         printf '  - %s\n' "${SERVER_JAR_PATHS[@]}"
+
+        # Set empty path to prevent unbound variable errors
+        export PXF_SERVER_JAR=""
         return 1
     fi
-    
+
     log_success "Found PXF Server JAR: $server_jar"
     export PXF_SERVER_JAR="$server_jar"
     return 0
@@ -60,12 +72,17 @@ function validate_server_jar() {
 
 function validate_jar_integrity() {
     log_info "🔍 Validating JAR integrity..."
-    
+
+    if [[ -z "${PXF_SERVER_JAR:-}" ]]; then
+        log_warning "JAR file integrity check skipped - JAR path not set"
+        return 0
+    fi
+
     if ! command -v jar >/dev/null 2>&1; then
         log_warning "jar command not available, skipping integrity check"
         return 0
     fi
-    
+
     # Test JAR can be read
     if jar tf "$PXF_SERVER_JAR" | head -5 >/dev/null 2>&1; then
         log_success "JAR file is readable and well-formed"
@@ -76,7 +93,7 @@ function validate_jar_integrity() {
     
     # Check JAR size is reasonable
     local jar_size
-    jar_size=$(stat -f%z "$PXF_SERVER_JAR" 2>/dev/null || stat -c%s "$PXF_SERVER_JAR" 2>/dev/null || echo 0)
+    jar_size=$(stat -c%s "$PXF_SERVER_JAR" 2>/dev/null || echo 0)
     
     if [[ $jar_size -lt 1000000 ]]; then  # Less than 1MB
         log_warning "JAR file seems unusually small: $jar_size bytes"
@@ -89,12 +106,17 @@ function validate_jar_integrity() {
 
 function validate_main_classes() {
     log_info "🔍 Validating main application classes..."
-    
+
+    if [[ -z "${PXF_SERVER_JAR:-}" ]]; then
+        log_warning "Main application classes validation skipped - JAR path not set"
+        return 0
+    fi
+
     if ! command -v jar >/dev/null 2>&1; then
         log_warning "jar command not available, skipping class validation"
         return 0
     fi
-    
+
     local found_classes=0
     local jar_contents
     jar_contents=$(jar tf "$PXF_SERVER_JAR" 2>/dev/null)
@@ -134,12 +156,17 @@ function validate_main_classes() {
 
 function validate_connector_classes() {
     log_info "🔌 Validating connector classes..."
-    
+
+    if [[ -z "${PXF_SERVER_JAR:-}" ]]; then
+        log_warning "Connector classes validation skipped - JAR path not set"
+        return 0
+    fi
+
     if ! command -v jar >/dev/null 2>&1; then
         log_warning "jar command not available, skipping connector validation"
         return 0
     fi
-    
+
     local connectors=("hdfs" "hive" "hbase" "jdbc" "json" "s3")
     local found_connectors=0
     local jar_contents
@@ -167,12 +194,17 @@ function validate_connector_classes() {
 
 function validate_dependencies() {
     log_info "📚 Validating dependencies..."
-    
+
+    if [[ -z "${PXF_SERVER_JAR:-}" ]]; then
+        log_warning "Dependencies validation skipped - JAR path not set"
+        return 0
+    fi
+
     if ! command -v jar >/dev/null 2>&1; then
         log_warning "jar command not available, skipping dependency validation"
         return 0
     fi
-    
+
     local jar_contents
     jar_contents=$(jar tf "$PXF_SERVER_JAR" 2>/dev/null)
     
@@ -195,12 +227,17 @@ function validate_dependencies() {
 
 function validate_manifest() {
     log_info "📋 Validating JAR manifest..."
-    
+
+    if [[ -z "${PXF_SERVER_JAR:-}" ]]; then
+        log_warning "JAR manifest validation skipped - JAR path not set"
+        return 0
+    fi
+
     if ! command -v jar >/dev/null 2>&1; then
         log_warning "jar command not available, skipping manifest validation"
         return 0
     fi
-    
+
     local manifest_content
     if manifest_content=$(jar xf "$PXF_SERVER_JAR" META-INF/MANIFEST.MF 2>/dev/null && cat META-INF/MANIFEST.MF 2>/dev/null); then
         log_success "JAR manifest is readable"
@@ -226,15 +263,20 @@ function validate_manifest() {
 
 function test_jar_execution() {
     log_info "🚀 Testing JAR execution capabilities..."
-    
+
+    if [[ -z "${PXF_SERVER_JAR:-}" ]]; then
+        log_warning "JAR execution test skipped - JAR path not set"
+        return 0
+    fi
+
     if ! command -v java >/dev/null 2>&1; then
         log_warning "Java not available, skipping execution test"
         return 0
     fi
-    
+
     # Try to get help or version information
     local java_output
-    if java_output=$(timeout 10s java -jar "$PXF_SERVER_JAR" --help 2>&1) || 
+    if java_output=$(timeout 10s java -jar "$PXF_SERVER_JAR" --help 2>&1) ||
        java_output=$(timeout 10s java -jar "$PXF_SERVER_JAR" --version 2>&1) ||
        java_output=$(timeout 10s java -jar "$PXF_SERVER_JAR" -h 2>&1); then
         log_success "JAR responds to help/version commands"
@@ -259,7 +301,7 @@ Server JAR: ${PXF_SERVER_JAR:-"Not found"}
 
 JAR Information:
 - Location: ${PXF_SERVER_JAR:-"Not found"}
-- Size: $(test -f "${PXF_SERVER_JAR:-}" && (stat -f%z "${PXF_SERVER_JAR}" 2>/dev/null || stat -c%s "${PXF_SERVER_JAR}" 2>/dev/null) || echo "Unknown") bytes
+- Size: $(test -f "${PXF_SERVER_JAR:-}" && stat -c%s "${PXF_SERVER_JAR}" 2>/dev/null || echo "Unknown") bytes
 - Readable: $(test -r "${PXF_SERVER_JAR:-}" && echo "Yes" || echo "No")
 
 Validation Results:

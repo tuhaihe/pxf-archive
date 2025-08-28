@@ -308,11 +308,30 @@ jobs:
           if ./gradlew clean build stage -x test --parallel --build-cache; then
             echo '✅ Server build successful'
 
-            # Verify stage artifacts
+            # Verify stage artifacts and JAR integrity
             echo 'Server build artifacts:'
             ls -la build/ || echo 'No build directory'
             ls -la build/stage/ || echo 'No stage directory'
-            find build -name '*.jar' | head -5 || echo 'No JAR files found'
+
+            # Find and verify JAR files
+            echo 'Verifying JAR files:'
+            find build -name '*.jar' -type f | while read jar_file; do
+              echo \"Checking JAR: \$jar_file\"
+              file_size=\$(stat -c%s \"\$jar_file\" 2>/dev/null || echo 0)
+              if [ \"\$file_size\" -gt 1000 ]; then
+                echo \"  ✅ Size: \$file_size bytes\"
+                # Test JAR integrity
+                if jar tf \"\$jar_file\" >/dev/null 2>&1; then
+                  echo \"  ✅ JAR integrity: OK\"
+                else
+                  echo \"  ❌ JAR integrity: FAILED\"
+                  exit 1
+                fi
+              else
+                echo \"  ❌ JAR too small: \$file_size bytes\"
+                exit 1
+              fi
+            done
           else
             echo '❌ Server build failed'
             exit 1
@@ -485,35 +504,63 @@ jobs:
             cp -r server/build/* \"\$PACKAGE_DIR/\" 2>/dev/null || echo 'No Server build artifacts found'
           fi
 
-          # Find and copy PXF JAR files to expected locations for integration tests
+          # Find and copy PXF JAR files with integrity verification
           echo 'Setting up JAR files for integration tests...'
           jar_found=false
 
-          # Look for JAR files in various locations
-          for search_path in 'server/build/stage' 'server/build' 'server'; do
+          # Function to verify and copy JAR file
+          copy_jar_with_verification() {
+            local src_jar=\"\$1\"
+            local dest_dir=\"\$2\"
+            local jar_name=\$(basename \"\$src_jar\")
+
+            echo \"Copying JAR: \$src_jar -> \$dest_dir/\$jar_name\"
+
+            # Verify source JAR integrity before copying
+            if ! jar tf \"\$src_jar\" >/dev/null 2>&1; then
+              echo \"❌ Source JAR is corrupted: \$src_jar\"
+              return 1
+            fi
+
+            # Copy the JAR file
+            cp \"\$src_jar\" \"\$dest_dir/\$jar_name\"
+
+            # Verify copied JAR integrity
+            if ! jar tf \"\$dest_dir/\$jar_name\" >/dev/null 2>&1; then
+              echo \"❌ Copied JAR is corrupted: \$dest_dir/\$jar_name\"
+              rm -f \"\$dest_dir/\$jar_name\"
+              return 1
+            fi
+
+            echo \"✅ JAR copied and verified: \$dest_dir/\$jar_name\"
+            return 0
+          }
+
+          # Look for JAR files in build locations
+          search_paths=('server/build/stage' 'server/build/libs' 'server/build')
+
+          for search_path in \"\${search_paths[@]}\"; do
             if [ -d \"\$search_path\" ]; then
-              # Find PXF service JAR
-              if find \"\$search_path\" -name 'pxf-service-*.jar' -type f | head -1 | read jar_file; then
-                echo \"Found PXF service JAR: \$jar_file\"
-                cp \"\$jar_file\" \"\$PACKAGE_DIR/application/\"
-                cp \"\$jar_file\" \"\$PACKAGE_DIR/lib/\"
-                jar_found=true
-              fi
+              echo \"Searching for JAR files in: \$search_path\"
 
-              # Find PXF app JAR
-              if find \"\$search_path\" -name 'pxf-app-*.jar' -type f | head -1 | read jar_file; then
-                echo \"Found PXF app JAR: \$jar_file\"
-                cp \"\$jar_file\" \"\$PACKAGE_DIR/application/\"
-                cp \"\$jar_file\" \"\$PACKAGE_DIR/lib/\"
-                jar_found=true
-              fi
+              # Find all JAR files in this path
+              while IFS= read -r -d '' jar_file; do
+                if [ -f \"\$jar_file\" ]; then
+                  jar_size=\$(stat -c%s \"\$jar_file\" 2>/dev/null || echo 0)
 
-              # Copy all JAR files to lib directory
-              find \"\$search_path\" -name '*.jar' -type f | while read jar_file; do
-                echo \"Found JAR file: \$jar_file\"
-                cp \"\$jar_file\" \"\$PACKAGE_DIR/lib/\" 2>/dev/null || true
-                jar_found=true
-              done
+                  if [ \"\$jar_size\" -gt 1000 ]; then
+                    echo \"Found JAR file: \$jar_file (size: \$jar_size bytes)\"
+
+                    # Copy to both locations for compatibility
+                    if copy_jar_with_verification \"\$jar_file\" \"\$PACKAGE_DIR/lib\" && \
+                       copy_jar_with_verification \"\$jar_file\" \"\$PACKAGE_DIR/application\"; then
+                      jar_found=true
+                    fi
+                  else
+                    echo \"⚠️ Skipping small JAR file: \$jar_file (size: \$jar_size bytes)\"
+                  fi
+                fi
+              done < <(find \"\$search_path\" -maxdepth 2 -name '*.jar' -type f -print0)
 
               if [ \"\$jar_found\" = true ]; then
                 break
@@ -522,8 +569,13 @@ jobs:
           done
 
           if [ \"\$jar_found\" = false ]; then
-            echo '⚠️ No JAR files found in server build artifacts'
+            echo '❌ No valid JAR files found in server build artifacts'
+            echo 'Available files in server/build:'
+            find server/build -type f -name '*' | head -10 || echo 'No files found'
+            exit 1
           fi
+
+          echo '✅ JAR files successfully included and verified'
 
           # Copy any extension binaries that were built successfully
           if [ -d external-table/build ]; then
